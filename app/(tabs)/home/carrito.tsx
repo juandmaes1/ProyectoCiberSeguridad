@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+
 import {
     View,
     Text,
@@ -12,8 +12,10 @@ import {
     Button,
 } from 'react-native';
 import { doc, getDoc, updateDoc, setDoc, onSnapshot } from 'firebase/firestore';
-import { db, auth } from '@/utils/firebaseConfig';
+import { db } from '@/utils/firebaseConfig';
+import { AuthContext } from '@/context/AuthContext';
 import { FontAwesome } from '@expo/vector-icons';
+import { useEffect, useState, useContext } from 'react';
 
 interface Book {
     id: string;
@@ -30,7 +32,8 @@ export default function CartView() {
     const [expiryDate, setExpiryDate] = useState('');
     const [cvc, setCVC] = useState('');
     const [savedData, setSavedData] = useState<{ address: string; cardNumber: string; expiryDate: string; cvc: string } | null>(null);
-    const userId = auth.currentUser?.uid;
+    const authCtx = useContext(AuthContext);
+    const userId = authCtx?.state.user?.uid;
 
     useEffect(() => {
         if (userId) {
@@ -64,7 +67,7 @@ export default function CartView() {
 
     const loadSavedData = async (uid: string) => {
         try {
-            const userRef = doc(db, 'users', uid);
+            const userRef = doc(db, 'Users', uid);
             const userDoc = await getDoc(userRef);
 
             if (userDoc.exists()) {
@@ -89,7 +92,7 @@ export default function CartView() {
 
         try {
             const cartRef = doc(db, 'carts', userId);
-            await updateDoc(cartRef, { items: updatedCart });
+            await setDoc(cartRef, { items: updatedCart }, { merge: true });
             setCartItems(updatedCart); // Actualiza el estado tras éxito en Firebase
             Alert.alert('Éxito', 'Libro eliminado del carrito.');
         } catch (error) {
@@ -102,7 +105,7 @@ export default function CartView() {
         if (!userId) return;
 
         try {
-            const userRef = doc(db, 'users', userId);
+            const userRef = doc(db, 'Users', userId);
             await setDoc(userRef, { address, cardNumber, expiryDate, cvc }, { merge: true });
             Alert.alert('Éxito', 'Datos guardados correctamente.');
         } catch (error) {
@@ -309,3 +312,4 @@ const styles = StyleSheet.create({
         marginTop: 20,
     },
 });
+

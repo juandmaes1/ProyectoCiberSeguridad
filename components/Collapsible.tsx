@@ -1,4 +1,4 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
+import { Ionicons } from '@expo/vector-icons';
 import { PropsWithChildren, useState } from 'react';
 import { StyleSheet, TouchableOpacity, useColorScheme } from 'react-native';
 

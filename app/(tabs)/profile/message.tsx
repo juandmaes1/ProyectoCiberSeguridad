@@ -1,7 +1,7 @@
 import { auth, db } from '@/utils/firebaseConfig';
 import { useLocalSearchParams } from 'expo-router';
 import { addDoc, collection, onSnapshot, orderBy, query, where } from 'firebase/firestore';
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Button, FlatList, Text, TextInput, View } from 'react-native';
 
 type MessageType = {
@@ -32,18 +32,22 @@ export default function Message() {
 
     const q = query(
       messagesRef,
-      where('senderId', 'in', [user?.uid, recipientId]),
-      where('recipientId', 'in', [user?.uid, recipientId]),
+      where('senderId', 'in', [user?.uid as string, recipientId]),
       orderBy('createdAt', 'asc')
     );
 
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
-        const newMessages = snapshot.docs.map((doc) => ({
+        const allMessages = snapshot.docs.map((doc) => ({
           id: doc.id,
-          ...doc.data(),
+          ...(doc.data() as Omit<MessageType, 'id'>),
         })) as MessageType[];
+        const newMessages = allMessages.filter(
+          (m) =>
+            (m.senderId === user?.uid && m.recipientId === recipientId) ||
+            (m.senderId === recipientId && m.recipientId === (user?.uid as string))
+        );
         setMessages(newMessages);
         setLoading(false);
       },

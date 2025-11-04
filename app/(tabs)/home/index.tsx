@@ -1,6 +1,8 @@
-import { auth, db } from '@/utils/firebaseConfig';
+import { db } from '@/utils/firebaseConfig';
+import { AuthContext } from '@/context/AuthContext';
 import { FontAwesome, FontAwesome5 } from '@expo/vector-icons';
 import { Link } from 'expo-router';
+
 import {
     collection,
     doc,
@@ -11,7 +13,8 @@ import {
     setDoc,
     updateDoc
 } from 'firebase/firestore';
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState, useContext } from 'react';
+
 import {
     ActivityIndicator,
     Alert,
@@ -49,7 +52,8 @@ export default function BookList() {
     const [isModalVisible, setIsModalVisible] = useState(false);
     const [selectedBook, setSelectedBook] = useState<Book | null>(null);
     const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-    const [userId, setUserId] = useState<string | null>(null);
+    const authCtx = useContext(AuthContext);
+    const userId = authCtx?.state.user?.uid ?? null;
     const [cartItems, setCartItems] = useState<Book[]>([]);
     const [quantity, setQuantity] = useState(1);
     const [searchText, setSearchText] = useState('');
@@ -69,10 +73,8 @@ export default function BookList() {
     ];
 
     useEffect(() => {
-        const currentUser = auth.currentUser;
-        if (currentUser) {
-            setUserId(currentUser.uid);
-            loadCart(currentUser.uid);
+        if (userId) {
+            loadCart(userId);
         }
 
         const q = query(collection(db, 'books'), orderBy('date', 'desc'));
@@ -95,7 +97,7 @@ export default function BookList() {
         });
 
         return () => unsubscribe();
-    }, []);
+    }, [userId]);
 
     useEffect(() => {
         if (selectedCategory) {
@@ -126,8 +128,17 @@ export default function BookList() {
     };
 
     const saveCart = async (uid: string, updatedCart: Book[]) => {
+        // Firestore no acepta valores undefined. Normalizamos los items.
+        const safeItems = updatedCart.map((it) => ({
+            id: String(it.id ?? ''),
+            title: String(it.title ?? ''),
+            price: String(it.price ?? ''),
+            image: String(it.image ?? ''),
+            quantity: Number(it.quantity ?? 1),
+        }));
+
         const cartRef = doc(db, 'carts', uid);
-        await setDoc(cartRef, { items: updatedCart });
+        await setDoc(cartRef, { items: safeItems }, { merge: true });
     };
 
     const addToCart = async (book: Book, quantity: number) => {
@@ -141,9 +152,17 @@ export default function BookList() {
 
         if (existingBookIndex !== -1) {
             updatedCart[existingBookIndex].quantity =
-                (updatedCart[existingBookIndex].quantity || 0) + quantity;
+                Number(updatedCart[existingBookIndex].quantity || 0) + Number(quantity || 1);
         } else {
-            updatedCart.push({ ...book, quantity });
+            // Solo guardar campos necesarios para el carrito para evitar undefined
+            updatedCart.push({
+                id: book.id,
+                title: book.title ?? '',
+                price: String(book.price ?? ''),
+                image: book.image ?? '',
+                quantity: Number(quantity || 1),
+                // no incluimos campos potencialmente undefined
+            } as Book);
         }
 
         setCartItems(updatedCart);
@@ -220,7 +239,7 @@ export default function BookList() {
                     onChangeText={handleSearch}
                 />
                 <FontAwesome5 name="search" size={20} color="black" style={styles.searchIcon} />
-                <Link href="/home/carrito">
+                <Link href="/(tabs)/home/carrito">
                     <FontAwesome5 name="shopping-cart" size={20} color="black" style={styles.cartIcon} />
                 </Link>
             </View>
@@ -261,13 +280,7 @@ export default function BookList() {
                     contentContainerStyle={styles.bookList}
                 />
             )}
-            <PaperButton
-                icon="robot"
-                mode="contained"
-                style={{ borderRadius: 10, marginTop: 20 }}
-            >
-                <Link href="/(tabs)/home/Geminis">Asistente Géminis</Link>
-            </PaperButton>
+            
 
 
             {/* Modal */}

@@ -1,7 +1,7 @@
 import { auth, db } from "@/utils/firebaseConfig";
 import { Link } from 'expo-router';
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from "react";
 import { Button, FlatList, Image, StyleSheet, Text, View } from 'react-native';
 
 interface User {

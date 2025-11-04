@@ -1,9 +1,7 @@
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import { View, Text, Modal, StyleSheet, Button, TouchableOpacity } from 'react-native';
 import React, { useRef, useState } from 'react';
-import Ionicons from '@expo/vector-icons/Ionicons';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { Ionicons, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 
 export interface ModalCameraProps {

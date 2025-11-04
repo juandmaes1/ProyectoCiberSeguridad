@@ -1,25 +1,16 @@
 import { AuthProvider } from "@/context/AuthContext";
 import { Stack } from "expo-router";
-import { PaperProvider } from "react-native-paper";
-import { StripeProvider } from "@stripe/stripe-react-native"; // Importa StripeProvider
 import "../utils/firebaseConfig";
+import * as React from "react";
 
 export default function RootLayout() {
   return (
-    <StripeProvider publishableKey="pk_test_51QP4kTRrvVMMNnMfhqm7p0ZNVn8nNFIHeMVJGoGOetbn42v2Yf3YfVfAXjneDBF22GRpkXDZefmL9LZepG9vCsls00SxI4GuX9">
-      <PaperProvider>
-        <AuthProvider>
-          <Stack
-            screenOptions={{
-              headerShown: false,
-            }}
-          >
-            <Stack.Screen name="index" options={{ title: "Ingresa" }} />
-            <Stack.Screen name="signup" options={{ title: "Regístrate" }} />
-            <Stack.Screen name="(tabs)" />
-          </Stack>
-        </AuthProvider>
-      </PaperProvider>
-    </StripeProvider>
+    <AuthProvider>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="index" options={{ title: "Ingresa" }} />
+        <Stack.Screen name="signup" options={{ title: "Registrate" }} />
+        <Stack.Screen name="(tabs)" />
+      </Stack>
+    </AuthProvider>
   );
 }

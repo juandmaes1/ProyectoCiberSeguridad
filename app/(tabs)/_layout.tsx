@@ -1,5 +1,5 @@
 import { DataProvider } from '@/dataContext/DataContext';
-import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
+import { FontAwesome5 } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 
 export default function _layout() {

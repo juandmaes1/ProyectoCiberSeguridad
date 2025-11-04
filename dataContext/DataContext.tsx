@@ -1,9 +1,9 @@
 import { createContext, useContext, useEffect, useReducer } from "react";
 import { dataReducer } from "./dataReducer";
-import { getStorage, ref, uploadBytes, uploadString } from "firebase/storage";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { DefaultResponse, PostProps } from "@/interfaces/postinterfaces";
 import { addDoc, collection, onSnapshot } from "firebase/firestore";
-import { db } from "@/utils/firebaseConfig";
+import { db, storage } from "@/utils/firebaseConfig";
 import { AuthContext } from "../context/AuthContext";
 
 export interface DataState {
@@ -31,21 +31,15 @@ export function DataProvider({ children }: any) {
     }, []);
 
 
-    const uploadImage = async (uri: string) => {
-        const storage = getStorage();
-        const storageRef = ref(storage, 'posts/'+ user.uid ?? "" + "-" + Date.now());
+    const uploadImage = async (uri: string): Promise<string> => {
+        const path = `posts/${(user?.uid ?? 'anon')}-${Date.now()}`;
+        const storageRef = ref(storage, path);
 
-        try {
-            const response = await fetch(uri);
-            const blob = await response.blob();
-            const snapshot = await uploadBytes(storageRef, blob)
-            console.log('Uploaded a raw string!');
-            console.log({
-                snapshot
-            })
-        } catch (error) {
-            console.log(error)
-        }
+        const response = await fetch(uri);
+        const blob = await response.blob();
+        await uploadBytes(storageRef, blob);
+        const url = await getDownloadURL(storageRef);
+        return url;
     }
 
     const getPosts = async () => {
@@ -60,7 +54,7 @@ export function DataProvider({ children }: any) {
             console.log({
                 urlImage
             })
-            const docRef = await addDoc(collection(db, "posts"), {
+            const docRef = await addDoc(collection(db, "books"), {
                 ...newPost,
                 image: urlImage,
                 date: new Date(),

@@ -1,9 +1,10 @@
 // EditProfile.js
+
 import { View, Text, TextInput, Button, StyleSheet, Alert } from 'react-native';
-import React, { useState, useEffect } from 'react';
 import { auth, db } from '@/utils/firebaseConfig';
 import { doc, updateDoc, getDoc } from 'firebase/firestore';
 import { updatePassword } from 'firebase/auth';
+import { useEffect, useState } from 'react';
 
 export default function EditProfile() {
   const [firstname, setFirstname] = useState('');

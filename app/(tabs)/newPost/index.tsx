@@ -1,105 +1,74 @@
-import { 
-  View, 
-  Text, 
-  TouchableOpacity, 
-  ScrollView, 
-  Modal, 
-  FlatList, 
-  Alert, 
-  Image 
-} from 'react-native';
+﻿import React, { useContext, useState } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, Alert, Image } from 'react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
-
-import { Button, TextInput, RadioButton } from 'react-native-paper';
+import { Button, TextInput } from 'react-native-paper';
 import ModalCamera from '@/components/ModalCamera';
-import { DataContext } from '@/dataContext/DataContext';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, auth, storage } from '@/utils/firebaseConfig';
+import { AuthContext } from '@/context/AuthContext';
 import { collection, addDoc } from 'firebase/firestore';
-import { useState } from 'react';
 
 export default function NewBookPost() {
+  const authCtx = useContext(AuthContext);
+  const me = authCtx?.state.user;
+
   const [isVisible, setIsVisible] = useState(false);
   const [currentPhoto, setCurrentPhoto] = useState<{ uri: string } | undefined>(undefined);
-  const [description, setDescription] = useState("");
-  const [title, setTitle] = useState("");
-  const [category, setCategory] = useState("");
-  const [price, setPrice] = useState("");
-  const [bookState, setBookState] = useState("nuevo");
-  const [categoryModalVisible, setCategoryModalVisible] = useState(false);
-
-  const categories = [
-    "Romance",
-    "Sci-Fi",
-    "Medieval",
-    "Manga",
-    "Comics",
-    "Drama",
-    "Terror",
-    "Fantasia",
-    "Aventura",
-    "Histórico",
-    "Educativo",
-  ];
+  const [title, setTitle] = useState('');
+  const [ingredients, setIngredients] = useState('');
+  const [price, setPrice] = useState('');
 
   const handleSavePost = async () => {
-    if (currentPhoto) {
-      try {
-        const storageRef = ref(storage, `images/${currentPhoto.uri.split('/').pop()}`);
-        const response = await fetch(currentPhoto.uri);
-        const blob = await response.blob();
+    if (me?.role !== 'admin') {
+      Alert.alert('No autorizado', 'Solo un administrador puede crear publicaciones.');
+      return;
+    }
+    if (!title || !ingredients || !price) {
+      Alert.alert('Campos incompletos', 'Completa título, ingredientes y precio.');
+      return;
+    }
+    if (!currentPhoto?.uri) {
+      Alert.alert('Advertencia', 'Por favor, sube una foto antes de publicar la arepa.');
+      return;
+    }
 
-        await uploadBytes(storageRef, blob);
-        const downloadURL = await getDownloadURL(storageRef);
+    try {
+      const storageRef = ref(storage, `images/${currentPhoto.uri.split('/').pop()}`);
+      const response = await fetch(currentPhoto.uri);
+      const blob = await response.blob();
+      await uploadBytes(storageRef, blob);
+      const downloadURL = await getDownloadURL(storageRef);
 
-        await addDoc(collection(db, "books"), {
-          userId: auth.currentUser?.uid,
-          title,
-          category,
-          price,
-          bookState,
-          description,
-          image: downloadURL,
-          date: new Date()
-        });
+      await addDoc(collection(db, 'arepas'), {
+        userId: auth.currentUser?.uid,
+        title,
+        price,
+        ingredients,
+        description: ingredients,
+        image: downloadURL,
+        date: new Date(),
+      });
 
-        Alert.alert('Éxito', 'El libro se ha publicado correctamente.');
-
-        setCurrentPhoto(undefined);
-        setTitle('');
-        setCategory('');
-        setPrice('');
-        setDescription('');
-        setBookState("nuevo");
-
-      } catch (error) {
-        console.error('Error al guardar el libro:', error);
-        Alert.alert('Error', 'Hubo un problema al publicar el libro. Inténtalo de nuevo.');
-      }
-    } else {
-      Alert.alert('Advertencia', 'Por favor, sube una foto antes de publicar el libro.');
+      Alert.alert('Éxito', 'La arepa se ha publicado correctamente.');
+      setCurrentPhoto(undefined);
+      setTitle('');
+      setIngredients('');
+      setPrice('');
+    } catch (error) {
+      console.error('Error al guardar la arepa:', error);
+      Alert.alert('Error', 'Hubo un problema al publicar la arepa. Inténtalo de nuevo.');
     }
   };
 
   return (
     <ScrollView
-      style={{
-        flex: 1,
-        paddingHorizontal: 20,
-        paddingVertical: 10,
-      }}
-      contentContainerStyle={{
-        gap: 25
-      }}
+      style={{ flex: 1, paddingHorizontal: 20, paddingVertical: 10 }}
+      contentContainerStyle={{ gap: 20 }}
     >
       <TouchableOpacity onPress={() => setIsVisible(true)}>
-        {currentPhoto && currentPhoto.uri ? (
+        {currentPhoto?.uri ? (
           <Image
-            style={{
-              width: '100%',
-              height: 200,
-              borderRadius: 10,
-            }}
+            style={{ width: '100%', height: 200, borderRadius: 10 }}
             source={{ uri: currentPhoto.uri }}
             resizeMode="cover"
           />
@@ -122,112 +91,36 @@ export default function NewBookPost() {
       <TextInput
         label="Título"
         mode="outlined"
-        onChangeText={text => setTitle(text)}
+        onChangeText={setTitle}
         value={title}
         style={{ borderRadius: 10 }}
       />
 
-      <TouchableOpacity
-        onPress={() => setCategoryModalVisible(true)}
-        style={{
-          borderColor: 'grey',
-          borderWidth: 1,
-          padding: 15,
-          borderRadius: 10,
-        }}
-      >
-        <Text>{category || "Seleccionar categoría"}</Text>
-      </TouchableOpacity>
-
-      <Modal
-        visible={categoryModalVisible}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setCategoryModalVisible(false)}
-      >
-        <View
-          style={{
-            flex: 1,
-            justifyContent: 'center',
-            alignItems: 'center',
-            backgroundColor: 'rgba(0, 0, 0, 0.5)',
-          }}
-        >
-          <View
-            style={{
-              backgroundColor: 'white',
-              padding: 20,
-              borderRadius: 10,
-              width: '80%',
-            }}
-          >
-            <FlatList
-              data={categories}
-              keyExtractor={(item) => item}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  onPress={() => {
-                    setCategory(item);
-                    setCategoryModalVisible(false);
-                  }}
-                  style={{
-                    padding: 10,
-                    borderBottomWidth: 1,
-                    borderBottomColor: '#ccc',
-                  }}
-                >
-                  <Text>{item}</Text>
-                </TouchableOpacity>
-              )}
-            />
-            <Button onPress={() => setCategoryModalVisible(false)}>
-              Cerrar
-            </Button>
-          </View>
-        </View>
-      </Modal>
+      <TextInput
+        label="Ingredientes"
+        mode="outlined"
+        multiline
+        onChangeText={setIngredients}
+        value={ingredients}
+        numberOfLines={3}
+        style={{ borderRadius: 10 }}
+      />
 
       <TextInput
         label="Precio"
         mode="outlined"
         keyboardType="numeric"
-        onChangeText={text => setPrice(text)}
+        onChangeText={setPrice}
         value={price}
         style={{ borderRadius: 10 }}
       />
 
-      <Text style={{ fontWeight: 'bold', marginBottom: 10 }}>Estado del libro</Text>
-      <RadioButton.Group onValueChange={value => setBookState(value)} value={bookState}>
-        <RadioButton.Item label="Nuevo" value="nuevo" />
-        <RadioButton.Item label="Usado" value="usado" />
-      </RadioButton.Group>
-
-      <TextInput
-        label="Descripción"
-        mode="outlined"
-        multiline
-        onChangeText={text => setDescription(text)}
-        value={description}
-        numberOfLines={3}
-        style={{ borderRadius: 10 }}
-      />
-
-      <Button
-        icon="camera"
-        mode="contained"
-        onPress={() => setIsVisible(true)}
-        style={{ borderRadius: 10 }}
-      >
+      <Button icon="camera" mode="contained" onPress={() => setIsVisible(true)} style={{ borderRadius: 10 }}>
         Tomar foto
       </Button>
 
-      <Button
-        icon="check"
-        mode="contained"
-        onPress={handleSavePost}
-        style={{ borderRadius: 10 }}
-      >
-        Publicar libro
+      <Button icon="check" mode="contained" onPress={handleSavePost} style={{ borderRadius: 10 }}>
+        Publicar arepa
       </Button>
 
       <ModalCamera

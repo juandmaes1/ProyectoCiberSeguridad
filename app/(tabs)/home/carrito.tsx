@@ -1,5 +1,4 @@
-
-import {
+﻿import {
     View,
     Text,
     FlatList,
@@ -11,58 +10,70 @@ import {
     ActivityIndicator,
     Button,
 } from 'react-native';
-import { doc, getDoc, updateDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '@/utils/firebaseConfig';
 import { AuthContext } from '@/context/AuthContext';
 import { FontAwesome } from '@expo/vector-icons';
 import { useEffect, useState, useContext } from 'react';
 
-interface Book {
+interface Arepa {
     id: string;
     title: string;
     price: string;
     image: string;
+    quantity?: number;
 }
 
 export default function CartView() {
-    const [cartItems, setCartItems] = useState<Book[]>([]);
+    const [cartItems, setCartItems] = useState<Arepa[]>([]);
     const [loading, setLoading] = useState(true);
     const [address, setAddress] = useState('');
     const [cardNumber, setCardNumber] = useState('');
     const [expiryDate, setExpiryDate] = useState('');
     const [cvc, setCVC] = useState('');
-    const [savedData, setSavedData] = useState<{ address: string; cardNumber: string; expiryDate: string; cvc: string } | null>(null);
+    const [savedData, setSavedData] = useState<{
+        address: string;
+        cardNumber: string;
+        expiryDate: string;
+        cvc: string;
+    } | null>(null);
     const authCtx = useContext(AuthContext);
     const userId = authCtx?.state.user?.uid;
 
     useEffect(() => {
-        if (userId) {
-            const cartRef = doc(db, 'carts', userId);
-            const unsubscribe = onSnapshot(
-                cartRef,
-                (docSnap) => {
-                    if (docSnap.exists()) {
-                        const items = docSnap.data().items || [];
-                        setCartItems(items);
-                    } else {
-                        setCartItems([]);
-                    }
-                    setLoading(false); // Detener el indicador de carga
-                },
-                (error) => {
-                    console.error('Error fetching cart:', error);
-                    Alert.alert('Error', 'No se pudo cargar el carrito.');
-                    setLoading(false); // Detener el indicador de carga en caso de error
-                }
-            );
-
-            loadSavedData(userId);
-
-            return () => unsubscribe(); // Limpieza al desmontar el componente
-        } else {
+        if (!userId) {
             Alert.alert('Error', 'Por favor inicia sesión para ver tu carrito.');
-            setLoading(false); // Detener el indicador de carga si no hay usuario
+            setLoading(false);
+            return;
         }
+
+        const cartRef = doc(db, 'carts', userId);
+        const unsubscribe = onSnapshot(
+            cartRef,
+            (docSnap) => {
+                if (docSnap.exists()) {
+                    const items = (docSnap.data().items || []) as Arepa[];
+                    setCartItems(
+                        items.map((item) => ({
+                            ...item,
+                            quantity: Number(item.quantity ?? 1),
+                        })),
+                    );
+                } else {
+                    setCartItems([]);
+                }
+                setLoading(false);
+            },
+            (error) => {
+                console.error('Error fetching cart:', error);
+                Alert.alert('Error', 'No se pudo cargar el carrito.');
+                setLoading(false);
+            },
+        );
+
+        loadSavedData(userId);
+
+        return () => unsubscribe();
     }, [userId]);
 
     const loadSavedData = async (uid: string) => {
@@ -93,10 +104,10 @@ export default function CartView() {
         try {
             const cartRef = doc(db, 'carts', userId);
             await setDoc(cartRef, { items: updatedCart }, { merge: true });
-            setCartItems(updatedCart); // Actualiza el estado tras éxito en Firebase
-            Alert.alert('Éxito', 'Libro eliminado del carrito.');
+            setCartItems(updatedCart);
+            Alert.alert('Éxito', 'Arepa eliminada del carrito.');
         } catch (error) {
-            Alert.alert('Error', 'No se pudo eliminar el libro del carrito.');
+            Alert.alert('Error', 'No se pudo eliminar la arepa del carrito.');
             console.error(error);
         }
     };
@@ -120,18 +131,22 @@ export default function CartView() {
             return;
         }
 
+        if (cartItems.length === 0) {
+            Alert.alert('Error', 'Tu carrito está vacío.');
+            return;
+        }
+
         if (!address || !cardNumber || !expiryDate || !cvc) {
             Alert.alert('Error', 'Por favor completa todos los campos de pago y dirección.');
             return;
         }
 
         if (cardNumber !== '4242424242424242') {
-            Alert.alert('Error', 'Número de tarjeta inválido. Usa una tarjeta genérica de Stripe.');
+            Alert.alert('Error', 'Número de tarjeta inválido. Usa la tarjeta genérica de Stripe.');
             return;
         }
 
         try {
-            // Crear el pedido
             const order = {
                 userId,
                 items: cartItems,
@@ -143,31 +158,19 @@ export default function CartView() {
             const orderRef = doc(db, 'orders', `${userId}_${Date.now()}`);
             await setDoc(orderRef, order);
 
-            // Vaciar el carrito en Firebase
             const cartRef = doc(db, 'carts', userId);
             await setDoc(cartRef, { items: [] });
 
-            // Actualiza el estado local
             setCartItems([]);
             setAddress('');
             setCardNumber('');
             setExpiryDate('');
             setCVC('');
 
-            Alert.alert(
-                'Éxito',
-                'Pedido realizado con éxito. ¿Deseas guardar tus datos para la próxima vez?',
-                [
-                    {
-                        text: 'No',
-                        style: 'cancel',
-                    },
-                    {
-                        text: 'Sí',
-                        onPress: () => saveData(),
-                    },
-                ]
-            );
+            Alert.alert('Éxito', 'Pedido realizado con éxito. ¿Deseas guardar tus datos para la próxima vez?', [
+                { text: 'No', style: 'cancel' },
+                { text: 'Sí', onPress: saveData },
+            ]);
         } catch (error) {
             Alert.alert('Error', 'No se pudo realizar el pedido.');
             console.error(error);
@@ -183,17 +186,17 @@ export default function CartView() {
         }
     };
 
-    const renderCartItem = ({ item }: { item: Book }) => (
+    const renderCartItem = ({ item }: { item: Arepa }) => (
         <View style={styles.cartItem}>
             <Image source={{ uri: item.image }} style={styles.cartItemImage} />
             <View style={styles.cartItemDetails}>
                 <Text style={styles.cartItemTitle}>{item.title}</Text>
                 <Text style={styles.cartItemPrice}>${item.price}</Text>
+                {item.quantity ? (
+                    <Text style={styles.cartItemQuantity}>Cantidad: {item.quantity}</Text>
+                ) : null}
             </View>
-            <TouchableOpacity
-                onPress={() => removeFromCart(item.id)}
-                style={styles.removeButton}
-            >
+            <TouchableOpacity onPress={() => removeFromCart(item.id)} style={styles.removeButton}>
                 <FontAwesome name="trash" size={24} color="#ff6347" />
             </TouchableOpacity>
         </View>
@@ -214,9 +217,7 @@ export default function CartView() {
                         keyExtractor={(item) => item.id}
                         contentContainerStyle={styles.cartList}
                     />
-                    {savedData && (
-                        <Button title="Usar datos guardados" onPress={handleUseSavedData} />
-                    )}
+                    {savedData && <Button title="Usar datos guardados" onPress={handleUseSavedData} />}
                     <TextInput
                         placeholder="Dirección de entrega"
                         value={address}
@@ -296,6 +297,10 @@ const styles = StyleSheet.create({
     cartItemPrice: {
         color: '#888',
     },
+    cartItemQuantity: {
+        color: '#333',
+        marginTop: 4,
+    },
     removeButton: {
         marginLeft: 10,
     },
@@ -312,4 +317,3 @@ const styles = StyleSheet.create({
         marginTop: 20,
     },
 });
-

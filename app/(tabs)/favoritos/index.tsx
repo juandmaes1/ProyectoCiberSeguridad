@@ -1,19 +1,16 @@
-
-import {
+﻿import {
     View,
     Text,
     FlatList,
     Image,
     StyleSheet,
-    TouchableOpacity,
     ActivityIndicator,
 } from 'react-native';
 import { collection, query, onSnapshot } from 'firebase/firestore';
 import { db, auth } from '@/utils/firebaseConfig';
-import { FontAwesome } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
 
-interface Book {
+interface Arepa {
     id: string;
     title: string;
     price: string;
@@ -22,31 +19,28 @@ interface Book {
 }
 
 export default function Favorites() {
-    const [favorites, setFavorites] = useState<Book[]>([]);
+    const [favorites, setFavorites] = useState<Arepa[]>([]);
     const [loading, setLoading] = useState(true);
-    const [userId, setUserId] = useState<string | null>(null);
 
     useEffect(() => {
-        // Obtener ID del usuario autenticado
         const currentUser = auth.currentUser;
-        if (currentUser) {
-            setUserId(currentUser.uid);
+        if (!currentUser) {
+            setLoading(false);
+            return;
         }
 
-        if (!currentUser) return;
-
-        // Suscribirse a los cambios en los libros y filtrar los favoritos
-        const q = query(collection(db, 'books'));
-        const unsubscribe = onSnapshot(q, (snapshot) => {
+        const arepaQuery = query(collection(db, 'arepas'));
+        const unsubscribe = onSnapshot(arepaQuery, (snapshot) => {
             const fetchedFavorites = snapshot.docs
-                .map((doc) => ({
-                    id: doc.id,
-                    title: doc.data().title,
-                    price: doc.data().price,
-                    image: doc.data().image,
-                    likedBy: doc.data().likedBy || [],
+                .map((docSnapshot) => ({
+                    id: docSnapshot.id,
+                    title: docSnapshot.data().title,
+                    price: docSnapshot.data().price,
+                    image: docSnapshot.data().image,
+                    likedBy: docSnapshot.data().likedBy || [],
                 }))
-                .filter((book) => book.likedBy.includes(currentUser.uid)); // Filtrar por favoritos del usuario
+                .filter((arepa) => arepa.likedBy.includes(currentUser.uid));
+
             setFavorites(fetchedFavorites);
             setLoading(false);
         });
@@ -54,19 +48,19 @@ export default function Favorites() {
         return () => unsubscribe();
     }, []);
 
-    const renderFavorite = ({ item }: { item: Book }) => (
+    const renderFavorite = ({ item }: { item: Arepa }) => (
         <View style={styles.favoriteCard}>
             <Image source={{ uri: item.image }} style={styles.favoriteImage} />
             <View style={styles.favoriteInfo}>
                 <Text style={styles.favoriteTitle}>{item.title}</Text>
-                <Text style={styles.favoritePrice}>${item.price}</Text>
+                <Text style={styles.favoritePrice}></Text>
             </View>
         </View>
     );
 
     return (
         <View style={styles.container}>
-            <Text style={styles.header}>Tus Favorito</Text>
+            <Text style={styles.header}>Tus arepas favoritas</Text>
             {loading ? (
                 <ActivityIndicator size="large" color="#0000ff" />
             ) : favorites.length > 0 ? (
@@ -77,7 +71,7 @@ export default function Favorites() {
                     contentContainerStyle={styles.favoritesList}
                 />
             ) : (
-                <Text style={styles.emptyMessage}>No tienes libros favoritos aún.</Text>
+                <Text style={styles.emptyMessage}>No tienes arepas favoritas aún.</Text>
             )}
         </View>
     );

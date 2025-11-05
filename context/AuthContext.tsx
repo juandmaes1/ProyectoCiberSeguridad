@@ -1,11 +1,14 @@
-
-import { authReducer } from "./authReducer";
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
+﻿import { authReducer } from "./authReducer";
+import {
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut as fbSignOut,
+} from "firebase/auth";
 import { auth, db } from "@/utils/firebaseConfig";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 import { createContext, ReactNode, useEffect, useReducer } from "react";
 
-// 🔹 Estado del usuario
 export interface AuthState {
   user?: any;
   isLogged: boolean;
@@ -16,24 +19,43 @@ const authStateDefault: AuthState = {
   isLogged: false,
 };
 
-// 🔹 Tipado del contexto
 interface AuthContextProps {
   state: AuthState;
   signUp: (firstname: string, lastname: string, email: string, password: string) => Promise<boolean>;
   signIn: (email: string, password: string) => Promise<boolean>;
+  approveUser: (uid: string) => Promise<void>;
+  setRole: (uid: string, role: "admin" | "user") => Promise<void>;
+  signOut: () => Promise<void>;
 }
 
-// 🔹 Crear contexto
 export const AuthContext = createContext<AuthContextProps | null>(null);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [state, dispatch] = useReducer(authReducer, authStateDefault);
 
   useEffect(() => {
-    // Aquí podrías agregar lógica para verificar si ya hay sesión guardada
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        try {
+          const ref = doc(db, "Users", firebaseUser.uid);
+          const snap = await getDoc(ref);
+          if (snap.exists()) {
+            dispatch({ type: "LOGIN", payload: { ...snap.data(), uid: firebaseUser.uid } });
+            return;
+          }
+        } catch (error) {
+          console.log("Error recuperando perfil Firestore:", error);
+        }
+
+        dispatch({ type: "LOGIN", payload: firebaseUser });
+      } else {
+        dispatch({ type: "LOGOUT" });
+      }
+    });
+
+    return () => unsubscribe();
   }, []);
 
-  // 🔹 Inicio de sesión
   const signIn = async (email: string, password: string): Promise<boolean> => {
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
@@ -53,8 +75,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  // 🔹 Registro de usuario
-  const signUp = async (firstname: string, lastname: string, email: string, password: string): Promise<boolean> => {
+  const signUp = async (
+    firstname: string,
+    lastname: string,
+    email: string,
+    password: string,
+  ): Promise<boolean> => {
     try {
       const response = await createUserWithEmailAndPassword(auth, email, password);
       const user = response.user;
@@ -63,6 +89,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         firstname,
         lastname,
         email,
+        role: "user",
+        approved: false,
       });
 
       dispatch({ type: "LOGIN", payload: user });
@@ -73,8 +101,43 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const approveUser = async (uid: string) => {
+    const ref = doc(db, "Users", uid);
+    const snap = await getDoc(ref);
+    const data = snap.exists() ? (snap.data() as any) : {};
+    const updates: any = { approved: true };
+
+    if (!data.welcomeBonusGranted) {
+      updates.welcomeBonusGranted = true;
+      updates.welcomeBonus = {
+        code: "WELCOME10",
+        used: false,
+        grantedAt: new Date().toISOString(),
+      };
+    }
+
+    await updateDoc(ref, updates);
+
+    if (state.user?.uid === uid) {
+      dispatch({ type: "LOGIN", payload: { ...state.user, approved: true, ...updates } });
+    }
+  };
+
+  const setRole = async (uid: string, role: "admin" | "user") => {
+    await updateDoc(doc(db, "Users", uid), { role });
+
+    if (state.user?.uid === uid) {
+      dispatch({ type: "LOGIN", payload: { ...state.user, role } });
+    }
+  };
+
+  const signOut = async () => {
+    await fbSignOut(auth);
+    dispatch({ type: "LOGOUT" });
+  };
+
   return (
-    <AuthContext.Provider value={{ state, signIn, signUp }}>
+    <AuthContext.Provider value={{ state, signIn, signUp, approveUser, setRole, signOut }}>
       {children}
     </AuthContext.Provider>
   );

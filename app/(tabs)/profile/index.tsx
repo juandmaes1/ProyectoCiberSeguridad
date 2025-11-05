@@ -1,7 +1,8 @@
 import { auth, db } from "@/utils/firebaseConfig";
-import { Link } from 'expo-router';
+import { Link, router } from 'expo-router';
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
-import { useEffect, useState } from "react";
+import { useEffect, useState, useContext } from "react";
+import { AuthContext } from '@/context/AuthContext';
 import { Button, FlatList, Image, StyleSheet, Text, View } from 'react-native';
 
 interface User {
@@ -20,6 +21,7 @@ interface Post {
 }
 
 export default function Profile() {
+  const authCtx = useContext(AuthContext);
   const [user, setUser] = useState<User | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(false);
@@ -52,7 +54,7 @@ export default function Profile() {
   const fetchUserPosts = async (userId: string) => {
     setLoading(true);
     try {
-      const postsRef = collection(db, 'books'); // Cambiado a la colección correcta
+      const postsRef = collection(db, 'arepas'); // Cambiado a la colección correcta
       const q = query(postsRef, where('userId', '==', userId));
       const querySnapshot = await getDocs(q);
 
@@ -117,24 +119,12 @@ export default function Profile() {
 
       {/* Botones adicionales */}
       <View style={{ marginVertical: 10 }}>
-        <Link href="/(tabs)/profile/selectChatUser" asChild>
-          <Button title="Iniciar un chat" />
-        </Link>
-      </View>
-      <View style={{ marginVertical: 10 }}>
-        <Link href="/(tabs)/profile/settings" asChild>
-          <Button title="Settings" />
-        </Link>
-      </View>
-      <View style={{ marginVertical: 10 }}>
         <Link href="/(tabs)/profile/editProfile" asChild>
           <Button title="Edit Profile" />
         </Link>
       </View>
       <View style={{ marginVertical: 10 }}>
-        <Link href="/(tabs)/profile/notifications" asChild>
-          <Button title="Notificaciones" />
-        </Link>
+        <Button title="Cerrar sesión" onPress={async () => { await authCtx?.signOut(); router.replace('/'); }} />
       </View>
     </View>
   );
@@ -196,3 +186,4 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 });
+

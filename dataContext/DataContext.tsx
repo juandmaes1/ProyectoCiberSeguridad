@@ -54,7 +54,7 @@ export function DataProvider({ children }: any) {
             console.log({
                 urlImage
             })
-            const docRef = await addDoc(collection(db, "books"), {
+            const docRef = await addDoc(collection(db, "arepas"), {
                 ...newPost,
                 image: urlImage,
                 date: new Date(),

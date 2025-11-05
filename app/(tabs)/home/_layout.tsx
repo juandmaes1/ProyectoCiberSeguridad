@@ -11,7 +11,7 @@ export default function RootLayout() {
         options={{
           headerTitle: () => (
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Text style={{ fontSize: 20, fontWeight: 'bold' }}>Libreria Virtual</Text>
+              <Text style={{ fontSize: 20, fontWeight: 'bold' }}>Arepería Virtual</Text>
               
               
             </View>

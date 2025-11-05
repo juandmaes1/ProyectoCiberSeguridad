@@ -1,10 +1,11 @@
-import { View, Text, StyleSheet, TextInput, Button, Alert } from 'react-native';
-import { Link } from 'expo-router';
+﻿import { View, Text, StyleSheet, TextInput, Button, Alert } from 'react-native';
+import { Link, useRouter } from 'expo-router';
 import { AuthContext } from '@/context/AuthContext';
 import { useContext, useState } from 'react';
 
 export default function Signup() {
   const authContext = useContext(AuthContext);
+  const router = useRouter();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -12,7 +13,7 @@ export default function Signup() {
   const [lastname, setLastname] = useState('');
 
   const handleSignUp = async () => {
-    if (!firstname || !lastname) {
+    if (!firstname.trim() || !lastname.trim()) {
       Alert.alert('Error', 'Por favor ingresa tu nombre y apellido.');
       return;
     }
@@ -22,11 +23,28 @@ export default function Signup() {
       return;
     }
 
-    const success = await authContext.signUp(firstname, lastname, email, password);
+    const success = await authContext.signUp(
+      firstname.trim(),
+      lastname.trim(),
+      email.trim(),
+      password,
+    );
+
     if (success) {
-      Alert.alert('Registro exitoso', '¡Bienvenido!', [
-        { text: 'OK', onPress: () => console.log('User registered') },
-      ]);
+      Alert.alert(
+        'Registro exitoso',
+        '¡Tu cuenta ha sido creada! Un administrador debe aprobarla antes de que puedas comprar.',
+        [
+          {
+            text: 'Ir al inicio',
+            onPress: () => router.push('/(tabs)/home'),
+          },
+        ],
+      );
+      setFirstname('');
+      setLastname('');
+      setEmail('');
+      setPassword('');
     } else {
       Alert.alert('Error', 'No se pudo registrar. Por favor verifica tus datos.');
     }
@@ -54,6 +72,8 @@ export default function Signup() {
         placeholder="Correo electrónico"
         value={email}
         onChangeText={setEmail}
+        autoCapitalize="none"
+        keyboardType="email-address"
         style={styles.input}
       />
 
@@ -80,6 +100,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     alignContent: 'center',
+    paddingHorizontal: 16,
   },
   title: {
     fontWeight: 'bold',
@@ -89,10 +110,10 @@ const styles = StyleSheet.create({
   input: {
     padding: 10,
     paddingHorizontal: 20,
-    margin: 10,
+    marginVertical: 10,
     borderColor: 'gray',
     borderWidth: 1,
     borderRadius: 5,
-    width: '80%',
+    width: '85%',
   },
 });

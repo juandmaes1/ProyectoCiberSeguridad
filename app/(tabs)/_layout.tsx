@@ -1,8 +1,12 @@
 import { DataProvider } from '@/dataContext/DataContext';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
+import { useContext } from 'react';
+import { AuthContext } from '@/context/AuthContext';
 
 export default function _layout() {
+    const authCtx = useContext(AuthContext);
+    const role = authCtx?.state.user?.role;
     return (
         <DataProvider>
             <Tabs
@@ -20,15 +24,28 @@ export default function _layout() {
                         ),
                     }}
                 />
-                <Tabs.Screen
-                    name="newPost"
-                    options={{
-                        title: "Nuevo Post",
-                        tabBarIcon: ({ color, size }) => (
-                            <FontAwesome5 name="edit" size={size} color={color} />
-                        ),
-                    }}
-                />
+                {role === 'admin' && (
+                  <Tabs.Screen
+                      name="newPost"
+                      options={{
+                          title: "Nuevo Post",
+                          tabBarIcon: ({ color, size }) => (
+                              <FontAwesome5 name="edit" size={size} color={color} />
+                          ),
+                      }}
+                  />
+                )}
+                {role === 'admin' && (
+                  <Tabs.Screen
+                      name="admin"
+                      options={{
+                          title: "Admin",
+                          tabBarIcon: ({ color, size }) => (
+                              <FontAwesome5 name="user-shield" size={size} color={color} />
+                          ),
+                      }}
+                  />
+                )}
                 <Tabs.Screen
                     name="profile"
                     options={{
@@ -48,11 +65,11 @@ export default function _layout() {
                     }}
                 />
                 <Tabs.Screen
-                    name="ofertas"
+                    name="bonos"
                     options={{
-                        title: "Ofertas",
+                        title: "Bonos",
                         tabBarIcon: ({ color, size }) => (
-                            <FontAwesome5 name="percent" size={size} color={color} />
+                            <FontAwesome5 name="gift" size={size} color={color} />
                         ),
                     }}
                 />

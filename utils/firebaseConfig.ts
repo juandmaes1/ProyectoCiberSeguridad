@@ -1,5 +1,12 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
-import { getFirestore, Firestore, connectFirestoreEmulator, doc, setDoc } from 'firebase/firestore';
+import {
+  getFirestore,
+  Firestore,
+  connectFirestoreEmulator,
+  doc,
+  setDoc,
+  getDoc,
+} from 'firebase/firestore';
 import { getStorage, FirebaseStorage, connectStorageEmulator } from 'firebase/storage';
 import { getAuth, Auth, connectAuthEmulator } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -49,6 +56,52 @@ const getEmulatorHost = (): string => {
   }
 
   return 'localhost';
+};
+
+const ensureSeedOrder = async (uid: string): Promise<void> => {
+  try {
+    const seedOrderId = `seed-${uid}`;
+    const globalOrderRef = doc(db, 'orders', seedOrderId);
+    const existing = await getDoc(globalOrderRef);
+    if (existing.exists()) {
+      return;
+    }
+
+    const createdAt = new Date();
+    const seedOrder = {
+      orderId: seedOrderId,
+      userId: uid,
+      items: [
+        {
+          id: 'sample-arepa',
+          title: 'Arepa de cortesia',
+          price: '12000',
+          image: 'https://images.unsplash.com/photo-1604908178395-1766428ff5d8?auto=format&fit=crop&w=600&q=80',
+          quantity: 1,
+        },
+      ],
+      address: 'Calle demo 123',
+      totals: {
+        subtotal: 12000,
+        discount: 0,
+        total: 12000,
+      },
+      payment: {
+        cardNumberMasked: '**** **** **** 4242',
+        expiryDate: '12/30',
+      },
+      usedWelcomeBonus: false,
+      status: 'registrado',
+      createdAt: createdAt.toISOString(),
+      createdAtTs: createdAt,
+      seeded: true,
+    };
+
+    await setDoc(globalOrderRef, seedOrder);
+    await setDoc(doc(db, 'Users', uid, 'orders', seedOrderId), seedOrder);
+  } catch (error) {
+    console.warn('No se pudo crear la orden de ejemplo para el admin:', error);
+  }
 };
 
 const ensureDefaultAdmin = async (host: string): Promise<void> => {
@@ -126,6 +179,8 @@ const ensureDefaultAdmin = async (host: string): Promise<void> => {
       },
       { merge: true },
     );
+
+    await ensureSeedOrder(localId);
   } catch (error) {
     console.warn('No se pudo garantizar el admin predeterminado:', error);
   }

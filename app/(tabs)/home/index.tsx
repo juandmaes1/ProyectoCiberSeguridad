@@ -1,9 +1,10 @@
-﻿import { db } from '@/utils/firebaseConfig';
+import { db } from '@/utils/firebaseConfig';
 import { AuthContext } from '@/context/AuthContext';
 import { FontAwesome, FontAwesome5 } from '@expo/vector-icons';
 import { Link } from 'expo-router';
 import {
     collection,
+    addDoc,
     doc,
     getDoc,
     onSnapshot,
@@ -11,8 +12,9 @@ import {
     query,
     setDoc,
     updateDoc,
+    serverTimestamp,
 } from 'firebase/firestore';
-import { useContext, useEffect, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -20,6 +22,7 @@ import {
     FlatList,
     Image,
     Modal,
+    ScrollView,
     StyleSheet,
     Text,
     TextInput,
@@ -40,6 +43,13 @@ interface Arepa {
     quantity?: number;
 }
 
+interface ArepaComment {
+    id: string;
+    text: string;
+    userName: string;
+    createdAt: string;
+}
+
 export default function BookList() {
     const [arepas, setArepas] = useState<Arepa[]>([]);
     const [filteredArepas, setFilteredArepas] = useState<Arepa[]>([]);
@@ -52,8 +62,13 @@ export default function BookList() {
     const userId = authCtx?.state.user?.uid ?? null;
     const isApproved = isAdmin || Boolean(authCtx?.state.user?.approved);
     const [cartItems, setCartItems] = useState<Arepa[]>([]);
-    const [quantity, setQuantity] = useState(1);
+    const [quantityInput, setQuantityInput] = useState('1');
     const [searchText, setSearchText] = useState('');
+    const [comments, setComments] = useState<ArepaComment[]>([]);
+    const [commentText, setCommentText] = useState('');
+    const [commentsLoading, setCommentsLoading] = useState(false);
+    const [postingComment, setPostingComment] = useState(false);
+    const commentsUnsubscribe = useRef<(() => void) | null>(null);
 
     useEffect(() => {
         const arepasQuery = query(collection(db, 'arepas'), orderBy('date', 'desc'));
@@ -105,6 +120,63 @@ export default function BookList() {
         }
     }, [userId]);
 
+    useEffect(() => {
+        if (commentsUnsubscribe.current) {
+            commentsUnsubscribe.current();
+            commentsUnsubscribe.current = null;
+        }
+
+        setComments([]);
+        setCommentText('');
+        setCommentsLoading(false);
+
+        if (!selectedArepa) {
+            return;
+        }
+
+        setCommentsLoading(true);
+
+        const commentsRef = collection(db, 'arepas', selectedArepa.id, 'comments');
+        const commentsQuery = query(commentsRef, orderBy('createdAt', 'desc'));
+
+        commentsUnsubscribe.current = onSnapshot(
+            commentsQuery,
+            (snapshot) => {
+                const nextComments: ArepaComment[] = snapshot.docs.map((docSnap) => {
+                    const data = docSnap.data() as any;
+                    const createdAt =
+                        data.createdAt && typeof data.createdAt.toDate === 'function'
+                            ? data.createdAt.toDate()
+                            : data.createdAt && !Number.isNaN(Date.parse(data.createdAt))
+                                ? new Date(data.createdAt)
+                                : null;
+
+                    return {
+                        id: docSnap.id,
+                        text: String(data.text ?? ''),
+                        userName: String(data.userName ?? 'Anonimo'),
+                        createdAt: createdAt ? createdAt.toLocaleString() : 'Sin fecha',
+                    };
+                });
+
+                setComments(nextComments);
+                setCommentsLoading(false);
+            },
+            (error) => {
+                console.error('Error cargando comentarios:', error);
+                setComments([]);
+                setCommentsLoading(false);
+            },
+        );
+
+        return () => {
+            if (commentsUnsubscribe.current) {
+                commentsUnsubscribe.current();
+                commentsUnsubscribe.current = null;
+            }
+        };
+    }, [selectedArepa?.id]);
+
     const loadCart = async (uid: string) => {
         try {
             const cartRef = doc(db, 'carts', uid);
@@ -115,7 +187,7 @@ export default function BookList() {
                 setCartItems(
                     items.map((item) => ({
                         ...item,
-                        quantity: Number(item.quantity ?? 1),
+                        quantity: Math.max(1, Number(item.quantity ?? 1)),
                     })),
                 );
             } else {
@@ -133,7 +205,8 @@ export default function BookList() {
             title: String(item.title ?? ''),
             price: String(item.price ?? ''),
             image: String(item.image ?? ''),
-            quantity: Number(item.quantity ?? 1),
+            description: String(item.description ?? ''),
+            quantity: Math.max(1, Number(item.quantity ?? 1)),
         }));
 
         const cartRef = doc(db, 'carts', uid);
@@ -142,14 +215,14 @@ export default function BookList() {
 
     const addToCart = async (arepa: Arepa, arepaQuantity: number) => {
         if (!userId) {
-            Alert.alert('Error', 'Por favor inicia sesión para agregar al carrito.');
+            Alert.alert('Error', 'Por favor inicia sesion para agregar al carrito.');
             return;
         }
 
         if (!isApproved) {
             Alert.alert(
                 'Cuenta no aprobada',
-                'Tu cuenta aún no ha sido aprobada por un administrador, por lo que no puedes comprar de momento.',
+                'Tu cuenta aun no ha sido aprobada por un administrador, por lo que no puedes comprar de momento.',
             );
             return;
         }
@@ -159,25 +232,29 @@ export default function BookList() {
 
         if (existingIndex !== -1) {
             updatedCart[existingIndex].quantity =
-                Number(updatedCart[existingIndex].quantity ?? 0) + Number(arepaQuantity || 1);
+                Math.max(
+                    1,
+                    Number(updatedCart[existingIndex].quantity ?? 0) + Number(arepaQuantity || 1),
+                );
         } else {
             updatedCart.push({
                 id: arepa.id,
                 title: arepa.title ?? '',
                 price: String(arepa.price ?? ''),
                 image: arepa.image ?? '',
-                quantity: Number(arepaQuantity || 1),
+                description: arepa.description ?? '',
+                quantity: Math.max(1, Number(arepaQuantity || 1)),
             });
         }
 
         setCartItems(updatedCart);
         await saveCart(userId, updatedCart);
-        Alert.alert('Éxito', 'Arepa agregada al carrito.');
+        Alert.alert('Exito', 'Arepa agregada al carrito.');
     };
 
     const toggleLike = async (arepa: Arepa) => {
         if (!userId) {
-            Alert.alert('Error', 'Por favor inicia sesión para dar "me gusta".');
+            Alert.alert('Error', 'Por favor inicia sesion para dar "me gusta".');
             return;
         }
 
@@ -196,15 +273,62 @@ export default function BookList() {
         await updateDoc(doc(db, 'arepas', arepa.id), { likedBy: updatedLikedBy });
     };
 
+    const handleAddComment = async () => {
+        if (!selectedArepa) {
+            return;
+        }
+
+        if (!userId) {
+            Alert.alert('Error', 'Por favor inicia sesion para comentar.');
+            return;
+        }
+
+        const text = commentText.trim();
+        if (!text) {
+            return;
+        }
+
+        const profile = authCtx?.state.user;
+        const displayName = [profile?.firstname, profile?.lastname]
+            .filter(Boolean)
+            .join(' ')
+            .trim() || profile?.email || 'Anonimo';
+
+        try {
+            setPostingComment(true);
+            await addDoc(collection(db, 'arepas', selectedArepa.id, 'comments'), {
+                text,
+                uid: userId,
+                userName: displayName,
+                createdAt: serverTimestamp(),
+            });
+            setCommentText('');
+        } catch (error) {
+            console.error('Error agregando comentario:', error);
+            Alert.alert('Error', 'No se pudo publicar el comentario.');
+        } finally {
+            setPostingComment(false);
+        }
+    };
+
     const openModal = (arepa: Arepa) => {
         setSelectedArepa(arepa);
-        setQuantity(1);
+        setQuantityInput('1');
         setIsModalVisible(true);
     };
 
     const closeModal = () => {
+        if (commentsUnsubscribe.current) {
+            commentsUnsubscribe.current();
+            commentsUnsubscribe.current = null;
+        }
         setSelectedArepa(null);
         setIsModalVisible(false);
+        setQuantityInput('1');
+        setCommentText('');
+        setComments([]);
+        setCommentsLoading(false);
+        setPostingComment(false);
     };
 
     const renderArepa = ({ item }: { item: Arepa }) => {
@@ -214,7 +338,9 @@ export default function BookList() {
         return (
             <View style={styles.arepaCard}>
                 <TouchableOpacity onPress={() => openModal(item)}>
-                    <Image source={{ uri: item.image }} style={styles.arepaImage} />
+                    <View style={styles.arepaImageWrapper}>
+                        <Image source={{ uri: item.image }} style={styles.arepaImage} />
+                    </View>
                     <Text style={styles.arepaTitle}>{item.title}</Text>
                     <Text style={styles.arepaPrice}>${item.price}</Text>
                 </TouchableOpacity>
@@ -255,6 +381,7 @@ export default function BookList() {
                     keyExtractor={(item) => item.id}
                     numColumns={2}
                     contentContainerStyle={styles.arepaList}
+                    columnWrapperStyle={styles.arepaColumn}
                 />
             )}
 
@@ -272,17 +399,65 @@ export default function BookList() {
                                     <TextInput
                                         style={styles.quantityInput}
                                         keyboardType="number-pad"
-                                        value={quantity.toString()}
-                                        onChangeText={(value) =>
-                                            setQuantity(Math.max(1, parseInt(value, 10) || 1))
+                                        value={quantityInput}
+                                        onChangeText={(value) => {
+                                            const digits = value.replace(/\D/g, '').slice(0, 3);
+                                            setQuantityInput(digits);
+                                        }}
+                                        onBlur={() =>
+                                            setQuantityInput((prev) => {
+                                                const parsed = parseInt(prev, 10);
+                                                if (!prev || Number.isNaN(parsed) || parsed < 1) {
+                                                    return '1';
+                                                }
+                                                return String(parsed);
+                                            })
                                         }
+                                    />
+                                </View>
+                                <View style={styles.commentsSection}>
+                                    <Text style={styles.commentsTitle}>Comentarios</Text>
+                                    {commentsLoading ? (
+                                        <ActivityIndicator size="small" color="#0000ff" />
+                                    ) : comments.length === 0 ? (
+                                        <Text style={styles.commentsEmpty}>
+                                            Aun no hay comentarios. Se el primero en comentar.
+                                        </Text>
+                                    ) : (
+                                        <ScrollView style={styles.commentsList}>
+                                            {comments.map((comment) => (
+                                                <View key={comment.id} style={styles.commentItem}>
+                                                    <View style={styles.commentHeader}>
+                                                        <Text style={styles.commentAuthor}>{comment.userName}</Text>
+                                                        <Text style={styles.commentDate}>{comment.createdAt}</Text>
+                                                    </View>
+                                                    <Text style={styles.commentText}>{comment.text}</Text>
+                                                </View>
+                                            ))}
+                                        </ScrollView>
+                                    )}
+                                    <TextInput
+                                        placeholder="Escribe tu comentario"
+                                        value={commentText}
+                                        onChangeText={setCommentText}
+                                        style={styles.commentInput}
+                                        multiline
+                                    />
+                                    <Button
+                                        title="Publicar comentario"
+                                        onPress={handleAddComment}
+                                        disabled={postingComment || commentText.trim().length === 0}
                                     />
                                 </View>
                                 <Button
                                     title="Agregar al carrito"
                                     onPress={() => {
                                         if (selectedArepa) {
-                                            addToCart(selectedArepa, quantity);
+                                            const quantityNumber = Math.max(
+                                                1,
+                                                parseInt(quantityInput, 10) || 1,
+                                            );
+                                            addToCart(selectedArepa, quantityNumber);
                                             closeModal();
                                         }
                                     }}
@@ -330,19 +505,31 @@ const styles = StyleSheet.create({
         paddingHorizontal: 10,
     },
     arepaList: {
-        paddingHorizontal: 10,
+        paddingHorizontal: 12,
+        paddingBottom: 24,
+    },
+    arepaColumn: {
+        justifyContent: 'space-between',
     },
     arepaCard: {
-        flex: 1,
-        margin: 5,
+        flexGrow: 1,
+        width: '48%',
+        marginVertical: 8,
+        marginHorizontal: 6,
         backgroundColor: '#fff',
         borderRadius: 10,
         overflow: 'hidden',
         elevation: 3,
     },
+    arepaImageWrapper: {
+        width: '100%',
+        aspectRatio: 3 / 2,
+        backgroundColor: '#f0f0f0',
+        overflow: 'hidden',
+    },
     arepaImage: {
         width: '100%',
-        height: 150,
+        height: '100%',
         resizeMode: 'cover',
     },
     arepaTitle: {
@@ -408,7 +595,61 @@ const styles = StyleSheet.create({
         paddingHorizontal: 10,
         paddingVertical: 5,
     },
+    commentsSection: {
+        width: '100%',
+        marginTop: 16,
+    },
+    commentsTitle: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        marginBottom: 8,
+    },
+    commentsList: {
+        maxHeight: 180,
+        marginBottom: 12,
+    },
+    commentItem: {
+        backgroundColor: '#f5f5f5',
+        padding: 8,
+        borderRadius: 8,
+        marginBottom: 8,
+    },
+    commentHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginBottom: 4,
+    },
+    commentAuthor: {
+        fontWeight: 'bold',
+        fontSize: 13,
+        color: '#333',
+    },
+    commentDate: {
+        fontSize: 11,
+        color: '#777',
+    },
+    commentText: {
+        fontSize: 13,
+        color: '#333',
+    },
+    commentsEmpty: {
+        color: '#777',
+        marginBottom: 12,
+        fontSize: 13,
+    },
+    commentInput: {
+        borderWidth: 1,
+        borderColor: '#ccc',
+        borderRadius: 6,
+        padding: 10,
+        minHeight: 60,
+        marginBottom: 12,
+        textAlignVertical: 'top',
+    },
 });
+
+
+
 
 
 

@@ -1,21 +1,11 @@
 import { auth, db } from '@/utils/firebaseConfig';
 import { Link, router } from 'expo-router';
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  onSnapshot,
-  orderBy,
-  query,
-  where,
-} from 'firebase/firestore';
-import { useContext, useEffect, useState } from 'react';
+import { collection, doc, getDoc, onSnapshot, orderBy, query } from 'firebase/firestore';
+import { useContext, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Button,
   FlatList,
-  Image,
   StyleSheet,
   Text,
   View,
@@ -23,19 +13,9 @@ import {
 
 import { AuthContext } from '@/context/AuthContext';
 
-interface User {
+interface UserProfile {
   firstname: string;
   lastname: string;
-}
-
-interface Post {
-  id: string;
-  image: string;
-  description: string;
-  title: string;
-  price: string;
-  date: string;
-  likedBy: string[];
 }
 
 interface OrderSummary {
@@ -50,96 +30,72 @@ interface OrderSummary {
 
 export default function Profile() {
   const authCtx = useContext(AuthContext);
-  const [user, setUser] = useState<User | null>(null);
-  const [posts, setPosts] = useState<Post[]>([]);
+  const [user, setUser] = useState<UserProfile | null>(null);
   const [orders, setOrders] = useState<OrderSummary[]>([]);
-  const [postsLoading, setPostsLoading] = useState(false);
-  const [ordersLoading, setOrdersLoading] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [ordersLoading, setOrdersLoading] = useState(true);
+  const ordersUnsubRef = useRef<() => void>();
 
   useEffect(() => {
-    let unsubscribeOrders: (() => void) | undefined;
-    const load = async () => {
-      const unsub = await fetchUserData();
-      unsubscribeOrders = unsub;
+    const loadProfile = async () => {
+      if (!auth.currentUser) {
+        setProfileLoading(false);
+        return;
+      }
+
+      try {
+        const userId = auth.currentUser.uid;
+        const userSnap = await getDoc(doc(db, 'Users', userId));
+
+        if (userSnap.exists()) {
+          setUser(userSnap.data() as UserProfile);
+        }
+
+        subscribeToOrders(userId);
+      } catch (error) {
+        console.error('Error loading profile:', error);
+      } finally {
+        setProfileLoading(false);
+      }
     };
-    load();
+
+    loadProfile();
+
     return () => {
-      if (unsubscribeOrders) {
-        unsubscribeOrders();
+      if (ordersUnsubRef.current) {
+        ordersUnsubRef.current();
+        ordersUnsubRef.current = undefined;
       }
     };
   }, []);
 
-  const fetchUserData = async (): Promise<(() => void) | undefined> => {
-    if (!auth.currentUser) {
-      console.log('No hay usuario autenticado');
-      return undefined;
-    }
-
-    const userId = auth.currentUser.uid;
-    const userRef = doc(db, 'Users', userId);
-
-    try {
-      const docSnap = await getDoc(userRef);
-      if (docSnap.exists()) {
-        setUser(docSnap.data() as User);
-        fetchUserPosts(userId);
-        return subscribeToOrders(userId);
-      } else {
-        console.log('No existe el documento de usuario');
-      }
-    } catch (error) {
-      console.error('Error al cargar datos del usuario:', error);
-    }
-    return undefined;
-  };
-
-  const fetchUserPosts = async (userId: string) => {
-    setPostsLoading(true);
-    try {
-      const postsRef = collection(db, 'arepas');
-      const q = query(postsRef, where('userId', '==', userId));
-      const querySnapshot = await getDocs(q);
-
-      const userPosts: Post[] = [];
-      querySnapshot.forEach((postDoc) => {
-        const data = postDoc.data();
-        const dateObj = data.date?.seconds ? new Date(data.date.seconds * 1000) : null;
-
-        userPosts.push({
-          id: postDoc.id,
-          image: data.image,
-          description: data.description,
-          title: data.title,
-          price: data.price,
-          date: dateObj ? dateObj.toLocaleDateString() : 'Sin fecha',
-          likedBy: data.likedBy || [],
-        });
-      });
-
-      setPosts(userPosts);
-    } catch (error) {
-      console.error('Error al recuperar publicaciones:', error);
-    }
-    setPostsLoading(false);
-  };
-
   const subscribeToOrders = (userId: string) => {
-    setOrdersLoading(true);
-    const ordersRef = collection(db, 'orders');
-    const q = query(ordersRef, where('userId', '==', userId), orderBy('createdAt', 'desc'));
+    if (ordersUnsubRef.current) {
+      ordersUnsubRef.current();
+    }
 
-    return onSnapshot(
+    setOrdersLoading(true);
+    const ordersRef = collection(doc(db, 'Users', userId), 'orders');
+    const q = query(ordersRef, orderBy('createdAtTs', 'desc'));
+
+    ordersUnsubRef.current = onSnapshot(
       q,
       (snapshot) => {
         const nextOrders = snapshot.docs.map((orderDoc) => {
           const data = orderDoc.data() as any;
           const totals = data.totals || {};
-          const createdAt =
+
+          const createdAtIso =
             data.createdAt && !Number.isNaN(Date.parse(data.createdAt))
-              ? new Date(data.createdAt).toLocaleString()
-              : 'Sin registro';
-          const itemsCount = Array.isArray(data.items)
+              ? new Date(data.createdAt)
+              : null;
+          const createdAtTs =
+            data.createdAtTs && typeof data.createdAtTs.toDate === 'function'
+              ? data.createdAtTs.toDate()
+              : null;
+          const createdAtDate = createdAtIso ?? createdAtTs;
+
+          const itemCount = Array.isArray(data.items)
             ? data.items.reduce(
                 (acc: number, item: any) => acc + Number(item.quantity ?? 1),
                 0,
@@ -148,11 +104,11 @@ export default function Profile() {
 
           return {
             id: orderDoc.id,
-            createdAt,
+            createdAt: createdAtDate ? createdAtDate.toLocaleString() : 'Sin registro',
             subtotal: Number(totals.subtotal ?? 0),
             discount: Number(totals.discount ?? 0),
             total: Number(totals.total ?? 0),
-            items: itemsCount,
+            items: itemCount,
             usedWelcomeBonus: Boolean(data.usedWelcomeBonus),
           };
         });
@@ -161,38 +117,31 @@ export default function Profile() {
         setOrdersLoading(false);
       },
       (error) => {
-        console.error('Error al escuchar órdenes:', error);
+        console.error('Error listening orders:', error);
         setOrdersLoading(false);
       },
     );
   };
 
-  const renderPost = ({ item }: { item: Post }) => (
-    <View style={styles.postContainer}>
-      <Image source={{ uri: item.image }} style={styles.image} />
-      <Text style={styles.title}>{item.title}</Text>
-      <Text style={styles.price}>Precio: {item.price}</Text>
-      <Text style={styles.date}>Fecha: {item.date}</Text>
-      <Text style={styles.description}>{item.description}</Text>
-    </View>
-  );
-
   const renderOrder = ({ item }: { item: OrderSummary }) => (
     <View style={styles.orderCard}>
       <Text style={styles.orderId}>Pedido #{item.id}</Text>
       <Text style={styles.orderLine}>Fecha: {item.createdAt}</Text>
-      <Text style={styles.orderLine}>Artículos: {item.items}</Text>
+      <Text style={styles.orderLine}>Articulos: {item.items}</Text>
       <Text style={styles.orderLine}>Subtotal: ${item.subtotal.toFixed(2)}</Text>
-      {item.discount > 0 && (
+      {item.discount > 0 ? (
         <Text style={[styles.orderLine, styles.discount]}>
-          Descuento: -${item.discount.toFixed(2)} (40% bono bienvenida)
+          Descuento: -${item.discount.toFixed(2)}
         </Text>
-      )}
+      ) : null}
       <Text style={styles.orderTotal}>Total pagado: ${item.total.toFixed(2)}</Text>
+      {item.usedWelcomeBonus ? (
+        <Text style={styles.orderBadge}>Bono de bienvenida aplicado</Text>
+      ) : null}
     </View>
   );
 
-  if (!user) {
+  if (profileLoading || !user) {
     return (
       <View style={[styles.container, styles.center]}>
         <ActivityIndicator size="large" color="#0000ff" />
@@ -206,47 +155,32 @@ export default function Profile() {
       <View style={styles.userInfo}>
         <View style={styles.initialsContainer}>
           <Text style={styles.initials}>
-            {user.firstname.charAt(0)}
-            {user.lastname.charAt(0)}
+            {user.firstname?.charAt(0) ?? '?'}
+            {user.lastname?.charAt(0) ?? '?'}
           </Text>
         </View>
-        <Text style={styles.username}>{`${user.firstname} ${user.lastname}`}</Text>
+        <View>
+          <Text style={styles.username}>{`${user.firstname} ${user.lastname}`}</Text>
+          <Text style={styles.subtext}>Historial de pedidos y configuracion</Text>
+        </View>
       </View>
-
-      <Text style={styles.sectionTitle}>Tus publicaciones</Text>
-      <FlatList
-        data={posts}
-        keyExtractor={(item) => item.id}
-        renderItem={renderPost}
-        ListEmptyComponent={
-          postsLoading ? (
-            <Text style={styles.subtext}>Cargando publicaciones…</Text>
-          ) : (
-            <Text style={styles.subtext}>No hay publicaciones para este usuario.</Text>
-          )
-        }
-        refreshing={postsLoading}
-        onRefresh={() => {
-          if (auth.currentUser?.uid) {
-            fetchUserPosts(auth.currentUser.uid);
-          }
-        }}
-      />
 
       <View style={styles.ordersHeader}>
         <Text style={styles.sectionTitle}>Historial de pedidos</Text>
-        {ordersLoading && <Text style={styles.subtext}>Cargando…</Text>}
+        {ordersLoading ? <ActivityIndicator size="small" color="#0000ff" /> : null}
       </View>
 
-      {orders.length === 0 && !ordersLoading ? (
-        <Text style={styles.subtext}>Aún no tienes pedidos registrados.</Text>
-      ) : (
-        <FlatList
-          data={orders}
-          keyExtractor={(item) => item.id}
-          renderItem={renderOrder}
-        />
-      )}
+      <FlatList
+        data={orders}
+        keyExtractor={(item) => item.id}
+        renderItem={renderOrder}
+        ListEmptyComponent={
+          <Text style={styles.emptyOrdersText}>
+            Aun no has registrado pedidos. Empieza comprando tu primera arepa.
+          </Text>
+        }
+        contentContainerStyle={orders.length === 0 ? styles.emptyOrdersContainer : undefined}
+      />
 
       <View style={styles.actions}>
         <View style={styles.actionButton}>
@@ -256,7 +190,7 @@ export default function Profile() {
         </View>
         <View style={styles.actionButton}>
           <Button
-            title="Cerrar sesión"
+            title="Cerrar sesion"
             onPress={async () => {
               await authCtx?.signOut();
               router.replace('/');
@@ -288,69 +222,39 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   initialsContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#007AFF',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#1e88e5',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 10,
+    marginRight: 12,
   },
   initials: {
-    color: 'white',
+    color: '#fff',
     fontSize: 20,
     fontWeight: 'bold',
   },
   username: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    marginTop: 16,
-    marginBottom: 8,
   },
   subtext: {
     fontSize: 14,
-    color: 'gray',
-  },
-  postContainer: {
-    marginBottom: 16,
-    backgroundColor: '#f8f8f8',
-    padding: 8,
-    borderRadius: 8,
-  },
-  image: {
-    width: '100%',
-    height: 200,
-    borderRadius: 8,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginVertical: 4,
-  },
-  price: {
-    fontSize: 16,
-  },
-  date: {
-    fontSize: 14,
-    color: 'gray',
-  },
-  description: {
-    fontSize: 16,
-    marginTop: 4,
+    color: '#666',
   },
   ordersHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 24,
-    marginBottom: 8,
+    marginBottom: 12,
   },
   orderCard: {
-    backgroundColor: '#f0f0f0',
+    backgroundColor: '#f5f5f5',
     padding: 12,
     borderRadius: 10,
     marginBottom: 10,
@@ -361,6 +265,7 @@ const styles = StyleSheet.create({
   },
   orderLine: {
     fontSize: 14,
+    color: '#333',
   },
   discount: {
     color: '#d62828',
@@ -369,6 +274,22 @@ const styles = StyleSheet.create({
     marginTop: 6,
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  orderBadge: {
+    marginTop: 4,
+    fontSize: 12,
+    color: '#1e88e5',
+  },
+  emptyOrdersContainer: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyOrdersText: {
+    textAlign: 'center',
+    color: '#777',
+    fontSize: 14,
+    paddingVertical: 24,
   },
   actions: {
     marginTop: 24,

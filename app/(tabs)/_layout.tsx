@@ -7,6 +7,7 @@ import { AuthContext } from '@/context/AuthContext';
 export default function _layout() {
     const authCtx = useContext(AuthContext);
     const role = authCtx?.state.user?.role;
+    const isAdmin = role === 'admin';
     return (
         <DataProvider>
             <Tabs
@@ -24,7 +25,7 @@ export default function _layout() {
                         ),
                     }}
                 />
-                {role === 'admin' && (
+                {isAdmin && (
                   <Tabs.Screen
                       name="newPost"
                       options={{
@@ -35,7 +36,7 @@ export default function _layout() {
                       }}
                   />
                 )}
-                {role === 'admin' && (
+                {isAdmin && (
                   <Tabs.Screen
                       name="admin"
                       options={{
@@ -55,24 +56,28 @@ export default function _layout() {
                         ),
                     }}
                 />
-                <Tabs.Screen
-                    name="favoritos"
-                    options={{
-                        title: "Favoritos",
-                        tabBarIcon: ({ color, size }) => (
-                            <FontAwesome5 name="heart" size={size} color={color} />
-                        ),
-                    }}
-                />
-                <Tabs.Screen
-                    name="bonos"
-                    options={{
-                        title: "Bonos",
-                        tabBarIcon: ({ color, size }) => (
-                            <FontAwesome5 name="gift" size={size} color={color} />
-                        ),
-                    }}
-                />
+                {!isAdmin && (
+                  <Tabs.Screen
+                      name="favoritos"
+                      options={{
+                          title: "Favoritos",
+                          tabBarIcon: ({ color, size }) => (
+                              <FontAwesome5 name="heart" size={size} color={color} />
+                          ),
+                      }}
+                  />
+                )}
+                {!isAdmin && (
+                  <Tabs.Screen
+                      name="bonos"
+                      options={{
+                          title: "Bonos",
+                          tabBarIcon: ({ color, size }) => (
+                              <FontAwesome5 name="gift" size={size} color={color} />
+                          ),
+                      }}
+                  />
+                )}
             </Tabs>
         </DataProvider>
     );

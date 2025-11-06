@@ -1,18 +1,18 @@
 ﻿import { authReducer } from "./authReducer";
-import {
-  createUserWithEmailAndPassword,
-  onAuthStateChanged,
-  signInWithEmailAndPassword,
-  signOut as fbSignOut,
-} from "firebase/auth";
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut as fbSignOut } from "firebase/auth";
 import { auth, db } from "@/utils/firebaseConfig";
-import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
-import { createContext, ReactNode, useEffect, useReducer } from "react";
+import { doc, updateDoc, onSnapshot } from "firebase/firestore";
+import { createContext, ReactNode, useEffect, useReducer, useRef } from "react";
+import { registerUser } from "@/services/auth/registerUser";
 
 export interface AuthState {
   user?: any;
   isLogged: boolean;
 }
+
+export type SignUpResult =
+  | { success: true }
+  | { success: false; errorCode: string; errorMessage: string };
 
 const authStateDefault: AuthState = {
   user: undefined,
@@ -21,7 +21,7 @@ const authStateDefault: AuthState = {
 
 interface AuthContextProps {
   state: AuthState;
-  signUp: (firstname: string, lastname: string, email: string, password: string) => Promise<boolean>;
+  signUp: (firstname: string, lastname: string, email: string, password: string) => Promise<SignUpResult>;
   signIn: (email: string, password: string) => Promise<boolean>;
   approveUser: (uid: string) => Promise<void>;
   setRole: (uid: string, role: "admin" | "user") => Promise<void>;
@@ -32,42 +32,45 @@ export const AuthContext = createContext<AuthContextProps | null>(null);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [state, dispatch] = useReducer(authReducer, authStateDefault);
+  const userDocUnsubscribe = useRef<(() => void) | null>(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
       if (firebaseUser) {
-        try {
-          const ref = doc(db, "Users", firebaseUser.uid);
-          const snap = await getDoc(ref);
-          if (snap.exists()) {
-            dispatch({ type: "LOGIN", payload: { ...snap.data(), uid: firebaseUser.uid } });
-            return;
-          }
-        } catch (error) {
-          console.log("Error recuperando perfil Firestore:", error);
+        if (userDocUnsubscribe.current) {
+          userDocUnsubscribe.current();
+          userDocUnsubscribe.current = null;
         }
 
-        dispatch({ type: "LOGIN", payload: firebaseUser });
+        const ref = doc(db, "Users", firebaseUser.uid);
+        userDocUnsubscribe.current = onSnapshot(ref, (snap) => {
+          if (snap.exists()) {
+            dispatch({ type: "LOGIN", payload: { ...snap.data(), uid: firebaseUser.uid } });
+          } else {
+            dispatch({ type: "LOGIN", payload: firebaseUser });
+          }
+        });
       } else {
+        if (userDocUnsubscribe.current) {
+          userDocUnsubscribe.current();
+          userDocUnsubscribe.current = null;
+        }
         dispatch({ type: "LOGOUT" });
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribeAuth();
+      if (userDocUnsubscribe.current) {
+        userDocUnsubscribe.current();
+        userDocUnsubscribe.current = null;
+      }
+    };
   }, []);
 
   const signIn = async (email: string, password: string): Promise<boolean> => {
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const docRef = doc(db, "Users", userCredential.user.uid);
-      const docSnap = await getDoc(docRef);
-
-      if (docSnap.exists()) {
-        dispatch({ type: "LOGIN", payload: { ...docSnap.data(), uid: userCredential.user.uid } });
-      } else {
-        dispatch({ type: "LOGIN", payload: userCredential.user });
-      }
-
+      await signInWithEmailAndPassword(auth, email, password);
       return true;
     } catch (error: any) {
       console.log("Error en signIn:", error.code, error.message);
@@ -80,58 +83,41 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     lastname: string,
     email: string,
     password: string,
-  ): Promise<boolean> => {
-    try {
-      const response = await createUserWithEmailAndPassword(auth, email, password);
-      const user = response.user;
+  ): Promise<SignUpResult> => {
+    const result = await registerUser({ firstname, lastname, email, password });
 
-      await setDoc(doc(db, "Users", user.uid), {
-        firstname,
-        lastname,
-        email,
-        role: "user",
-        approved: false,
-      });
-
-      dispatch({ type: "LOGIN", payload: user });
-      return true;
-    } catch (error: any) {
-      console.log("Error en signUp:", error.code, error.message);
-      return false;
-    }
-  };
-
-  const approveUser = async (uid: string) => {
-    const ref = doc(db, "Users", uid);
-    const snap = await getDoc(ref);
-    const data = snap.exists() ? (snap.data() as any) : {};
-    const updates: any = { approved: true };
-
-    if (!data.welcomeBonusGranted) {
-      updates.welcomeBonusGranted = true;
-      updates.welcomeBonus = {
-        code: "WELCOME10",
-        used: false,
-        grantedAt: new Date().toISOString(),
+    if (!result.success) {
+      console.log("Error en signUp:", result.errorCode, result.errorMessage);
+      return {
+        success: false,
+        errorCode: result.errorCode,
+        errorMessage: result.errorMessage,
       };
     }
 
-    await updateDoc(ref, updates);
+    return { success: true };
+  };
 
-    if (state.user?.uid === uid) {
-      dispatch({ type: "LOGIN", payload: { ...state.user, approved: true, ...updates } });
-    }
+  const approveUser = async (uid: string) => {
+    await updateDoc(doc(db, "Users", uid), {
+      approved: true,
+      welcomeBonus: {
+        code: "WELCOME40",
+        used: false,
+        grantedAt: new Date().toISOString(),
+      },
+    });
   };
 
   const setRole = async (uid: string, role: "admin" | "user") => {
     await updateDoc(doc(db, "Users", uid), { role });
-
-    if (state.user?.uid === uid) {
-      dispatch({ type: "LOGIN", payload: { ...state.user, role } });
-    }
   };
 
   const signOut = async () => {
+    if (userDocUnsubscribe.current) {
+      userDocUnsubscribe.current();
+      userDocUnsubscribe.current = null;
+    }
     await fbSignOut(auth);
     dispatch({ type: "LOGOUT" });
   };

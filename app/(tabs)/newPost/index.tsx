@@ -1,89 +1,109 @@
-﻿import React, { useContext, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Alert, Image } from 'react-native';
+﻿import React, { useContext, useEffect, useState } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, Alert, Image, StyleSheet } from 'react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { Button, TextInput } from 'react-native-paper';
-import ModalCamera from '@/components/ModalCamera';
+import { useRouter } from 'expo-router';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { collection, addDoc } from 'firebase/firestore';
+
+import ModalCamera from '@/components/ModalCamera';
 import { db, auth, storage } from '@/utils/firebaseConfig';
 import { AuthContext } from '@/context/AuthContext';
-import { collection, addDoc } from 'firebase/firestore';
+
+interface CameraPhoto {
+  uri: string;
+}
 
 export default function NewBookPost() {
   const authCtx = useContext(AuthContext);
   const me = authCtx?.state.user;
+  const router = useRouter();
 
   const [isVisible, setIsVisible] = useState(false);
-  const [currentPhoto, setCurrentPhoto] = useState<{ uri: string } | undefined>(undefined);
+  const [currentPhoto, setCurrentPhoto] = useState<CameraPhoto | null>(null);
   const [title, setTitle] = useState('');
-  const [ingredients, setIngredients] = useState('');
+  const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
+  const [uploading, setUploading] = useState(false);
 
-  const handleSavePost = async () => {
-    if (me?.role !== 'admin') {
-      Alert.alert('No autorizado', 'Solo un administrador puede crear publicaciones.');
-      return;
+  useEffect(() => {
+    if (me && me.role !== 'admin') {
+      router.replace('/(tabs)/home');
     }
-    if (!title || !ingredients || !price) {
-      Alert.alert('Campos incompletos', 'Completa título, ingredientes y precio.');
-      return;
-    }
-    if (!currentPhoto?.uri) {
-      Alert.alert('Advertencia', 'Por favor, sube una foto antes de publicar la arepa.');
+  }, [me, router]);
+
+  const isAdmin = me?.role === 'admin';
+
+  if (!isAdmin) {
+    return <View />;
+  }
+
+  const handleOpenCamera = () => setIsVisible(true);
+
+  const handleCloseCamera = () => setIsVisible(false);
+
+  const handleSavePhoto = (photo: CameraPhoto) => {
+    setCurrentPhoto(photo);
+  };
+
+  const resetForm = () => {
+    setTitle('');
+    setDescription('');
+    setPrice('');
+    setCurrentPhoto(null);
+  };
+
+  const handleSubmit = async () => {
+    if (!title.trim() || !price.trim()) {
+      Alert.alert('Validación', 'Ingresa al menos título y precio.');
       return;
     }
 
     try {
-      const storageRef = ref(storage, `images/${currentPhoto.uri.split('/').pop()}`);
-      const response = await fetch(currentPhoto.uri);
-      const blob = await response.blob();
-      await uploadBytes(storageRef, blob);
-      const downloadURL = await getDownloadURL(storageRef);
+      setUploading(true);
+      let downloadURL = '';
+
+      if (currentPhoto?.uri) {
+        const response = await fetch(currentPhoto.uri);
+        const blob = await response.blob();
+        const photoRef = ref(storage, `arepas/${Date.now()}.jpg`);
+        await uploadBytes(photoRef, blob);
+        downloadURL = await getDownloadURL(photoRef);
+      }
+
+      const ownerId = me?.uid ?? auth.currentUser?.uid ?? '';
 
       await addDoc(collection(db, 'arepas'), {
-        userId: auth.currentUser?.uid,
-        title,
-        price,
-        ingredients,
-        description: ingredients,
+        title: title.trim(),
+        description: description.trim(),
+        price: price.trim(),
         image: downloadURL,
+        userId: ownerId,
         date: new Date(),
+        likedBy: [],
       });
 
-      Alert.alert('Éxito', 'La arepa se ha publicado correctamente.');
-      setCurrentPhoto(undefined);
-      setTitle('');
-      setIngredients('');
-      setPrice('');
+      Alert.alert('Éxito', 'Publicación creada correctamente.');
+      resetForm();
     } catch (error) {
-      console.error('Error al guardar la arepa:', error);
-      Alert.alert('Error', 'Hubo un problema al publicar la arepa. Inténtalo de nuevo.');
+      console.error('Error creando publicación:', error);
+      Alert.alert('Error', 'No se pudo crear la publicación.');
+    } finally {
+      setUploading(false);
     }
   };
 
   return (
-    <ScrollView
-      style={{ flex: 1, paddingHorizontal: 20, paddingVertical: 10 }}
-      contentContainerStyle={{ gap: 20 }}
-    >
-      <TouchableOpacity onPress={() => setIsVisible(true)}>
+    <ScrollView contentContainerStyle={styles.container}>
+      <Text style={styles.heading}>Crear nueva arepa</Text>
+
+      <TouchableOpacity style={styles.imagePicker} onPress={handleOpenCamera}>
         {currentPhoto?.uri ? (
-          <Image
-            style={{ width: '100%', height: 200, borderRadius: 10 }}
-            source={{ uri: currentPhoto.uri }}
-            resizeMode="cover"
-          />
+          <Image source={{ uri: currentPhoto.uri }} style={styles.imagePreview} />
         ) : (
-          <View
-            style={{
-              backgroundColor: 'grey',
-              paddingHorizontal: 20,
-              aspectRatio: 1 / 0.8,
-              borderRadius: 10,
-              justifyContent: 'center',
-              alignItems: 'center',
-            }}
-          >
-            <FontAwesome5 name="camera" size={30} color="white" />
+          <View style={styles.imagePlaceholder}>
+            <FontAwesome5 name="camera" size={32} color="#999" />
+            <Text style={styles.imagePlaceholderText}>Agregar foto</Text>
           </View>
         )}
       </TouchableOpacity>
@@ -91,46 +111,86 @@ export default function NewBookPost() {
       <TextInput
         label="Título"
         mode="outlined"
-        onChangeText={setTitle}
         value={title}
-        style={{ borderRadius: 10 }}
+        onChangeText={setTitle}
+        style={styles.input}
       />
 
       <TextInput
-        label="Ingredientes"
+        label="Descripción"
         mode="outlined"
+        value={description}
+        onChangeText={setDescription}
         multiline
-        onChangeText={setIngredients}
-        value={ingredients}
-        numberOfLines={3}
-        style={{ borderRadius: 10 }}
+        style={styles.input}
       />
 
       <TextInput
         label="Precio"
         mode="outlined"
-        keyboardType="numeric"
-        onChangeText={setPrice}
         value={price}
-        style={{ borderRadius: 10 }}
+        onChangeText={setPrice}
+        keyboardType="decimal-pad"
+        style={styles.input}
       />
 
-      <Button icon="camera" mode="contained" onPress={() => setIsVisible(true)} style={{ borderRadius: 10 }}>
-        Tomar foto
-      </Button>
-
-      <Button icon="check" mode="contained" onPress={handleSavePost} style={{ borderRadius: 10 }}>
-        Publicar arepa
+      <Button
+        mode="contained"
+        icon="content-save"
+        onPress={handleSubmit}
+        loading={uploading}
+        disabled={uploading}
+      >
+        Guardar publicación
       </Button>
 
       <ModalCamera
         isVisible={isVisible}
-        onClose={() => setIsVisible(false)}
+        onClose={handleCloseCamera}
         onSave={(photo) => {
-          setCurrentPhoto(photo);
-          setIsVisible(false);
+          if (photo?.uri) {
+            handleSavePhoto(photo as CameraPhoto);
+          }
+          handleCloseCamera();
         }}
       />
     </ScrollView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    padding: 16,
+    backgroundColor: '#fff',
+  },
+  heading: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    marginBottom: 16,
+  },
+  imagePicker: {
+    marginBottom: 16,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    height: 200,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imagePreview: {
+    width: '100%',
+    height: '100%',
+  },
+  imagePlaceholder: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imagePlaceholderText: {
+    marginTop: 8,
+    color: '#999',
+  },
+  input: {
+    marginBottom: 16,
+  },
+});

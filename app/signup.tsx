@@ -1,7 +1,8 @@
-﻿import { View, Text, StyleSheet, TextInput, Button, Alert } from 'react-native';
-import { Link, useRouter } from 'expo-router';
-import { AuthContext } from '@/context/AuthContext';
 import { useContext, useState } from 'react';
+import { View, Text, StyleSheet, TextInput, Button, Alert } from 'react-native';
+import { Link, useRouter } from 'expo-router';
+
+import { AuthContext } from '@/context/AuthContext';
 
 export default function Signup() {
   const authContext = useContext(AuthContext);
@@ -23,17 +24,17 @@ export default function Signup() {
       return;
     }
 
-    const success = await authContext.signUp(
+    const result = await authContext.signUp(
       firstname.trim(),
       lastname.trim(),
       email.trim(),
       password,
     );
 
-    if (success) {
+    if (result.success) {
       Alert.alert(
         'Registro exitoso',
-        '¡Tu cuenta ha sido creada! Un administrador debe aprobarla antes de que puedas comprar.',
+        'Tu cuenta ha sido creada. Un administrador debe aprobarla antes de que puedas comprar.',
         [
           {
             text: 'Ir al inicio',
@@ -45,9 +46,19 @@ export default function Signup() {
       setLastname('');
       setEmail('');
       setPassword('');
-    } else {
-      Alert.alert('Error', 'No se pudo registrar. Por favor verifica tus datos.');
+      return;
     }
+
+    const readableMessage =
+      result.errorCode === 'auth/email-already-in-use'
+        ? 'Este correo ya está registrado. Intenta iniciar sesión.'
+        : result.errorCode === 'auth/invalid-email'
+          ? 'El correo ingresado no es válido.'
+          : result.errorCode === 'auth/weak-password'
+            ? 'La contraseña debe tener al menos 6 caracteres.'
+            : result.errorMessage ?? 'No se pudo registrar. Verifica tus datos.';
+
+    Alert.alert('Error', readableMessage);
   };
 
   return (

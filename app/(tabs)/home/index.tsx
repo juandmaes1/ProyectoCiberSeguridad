@@ -56,10 +56,6 @@ export default function BookList() {
     const [searchText, setSearchText] = useState('');
 
     useEffect(() => {
-        if (userId) {
-            loadCart(userId);
-        }
-
         const arepasQuery = query(collection(db, 'arepas'), orderBy('date', 'desc'));
         const unsubscribe = onSnapshot(arepasQuery, (snapshot) => {
             const fetchedArepas: Arepa[] = snapshot.docs.map((docSnapshot) => {
@@ -83,7 +79,7 @@ export default function BookList() {
         });
 
         return () => unsubscribe();
-    }, [userId]);
+    }, []);
 
     useEffect(() => {
         if (!searchText.trim()) {
@@ -100,6 +96,14 @@ export default function BookList() {
             }),
         );
     }, [arepas, searchText]);
+
+    useEffect(() => {
+        if (userId) {
+            loadCart(userId);
+        } else {
+            setCartItems([]);
+        }
+    }, [userId]);
 
     const loadCart = async (uid: string) => {
         try {

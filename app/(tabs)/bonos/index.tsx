@@ -1,10 +1,19 @@
 ﻿import { View, Text, StyleSheet } from 'react-native';
+import { useContext, useEffect } from 'react';
+import { useRouter } from 'expo-router';
+
 import { AuthContext } from '@/context/AuthContext';
-import { useContext } from 'react';
 
 export default function Bonuses() {
   const authCtx = useContext(AuthContext);
   const user = authCtx?.state.user;
+  const router = useRouter();
+
+  useEffect(() => {
+    if (user?.role === 'admin') {
+      router.replace('/(tabs)/home');
+    }
+  }, [user, router]);
 
   if (!user) {
     return (
@@ -15,7 +24,11 @@ export default function Bonuses() {
     );
   }
 
-  const isApproved = user.role === 'admin' || Boolean(user.approved);
+  if (user.role === 'admin') {
+    return <View />;
+  }
+
+  const isApproved = Boolean(user.approved);
   const welcomeBonus = user.welcomeBonus;
 
   if (!welcomeBonus) {
@@ -40,17 +53,19 @@ export default function Bonuses() {
       <Text style={styles.title}>Bonos disponibles</Text>
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Bono de bienvenida</Text>
-        <Text style={styles.detail}>Código: <Text style={styles.code}>{welcomeBonus.code}</Text></Text>
+        <Text style={styles.detail}>
+          Código: <Text style={styles.code}>{welcomeBonus.code}</Text>
+        </Text>
         <Text style={styles.detail}>Estado: {welcomeBonus.used ? 'Utilizado' : 'Disponible'}</Text>
-        <Text style={styles.detail}>Otorgado: {new Date(welcomeBonus.grantedAt ?? Date.now()).toLocaleDateString()}</Text>
+        <Text style={styles.detail}>
+          Otorgado: {new Date(welcomeBonus.grantedAt ?? Date.now()).toLocaleDateString()}
+        </Text>
         {!isApproved && (
-          <Text style={styles.notice}>
-            Tu cuenta aún requiere aprobación para usar este bono.
-          </Text>
+          <Text style={styles.notice}>Tu cuenta aún requiere aprobación para usar este bono.</Text>
         )}
         {isApproved && !welcomeBonus.used && (
           <Text style={styles.notice}>
-            Presenta este código al momento de tu primera compra para obtener tu descuento.
+            Usa este código en tu primera compra para obtener tu descuento del 40 %.
           </Text>
         )}
         {welcomeBonus.used && (
@@ -101,4 +116,3 @@ const styles = StyleSheet.create({
     color: '#555',
   },
 });
-
